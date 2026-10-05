@@ -30,6 +30,10 @@ O navegador abrirá em `http://localhost:8501`. Para parar, use `Ctrl+C` no Powe
 
 O arquivo `data/simulator.db` é criado automaticamente e guarda questões, tentativas e respostas. Faça uma cópia desse arquivo caso queira guardar um backup do progresso. Para reiniciar todo o progresso, feche o aplicativo e exclua apenas esse arquivo.
 
+## Banco de questões
+
+Além das questões autorais iniciais, o projeto inclui o banco público CLF-C02 do [CloudCertPrep](https://github.com/nastaso/cloudcertprep), distribuído sob a licença MIT. Os arquivos e uma cópia da licença estão em `question_bank/cloudcertprep/`; cada questão importada é identificada no banco e na revisão como **CloudCertPrep (MIT)**. Esse material é de prática: não é um dump, não é afiliado à AWS e não garante que uma questão apareça no exame.
+
 ## Conteúdo e lógica
 
 - Diário: 20 questões; completo: 65 questões e 90 minutos.

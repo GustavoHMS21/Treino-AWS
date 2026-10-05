@@ -14,7 +14,10 @@ def option_text(question, keys):
     """Apresenta letra e conteúdo, inclusive em questões de múltipla escolha."""
     if not keys:
         return "Não respondida"
-    return " · ".join(f"{key}. {question['choices'].get(key, 'Alternativa indisponível')}" for key in keys)
+    choices = question.get("choices", {}) if isinstance(question, dict) else {}
+    if not isinstance(choices, dict):
+        choices = {}
+    return " · ".join(f"{key}. {choices.get(key, 'Alternativa indisponível')}" for key in keys)
 
 def dashboard():
     attempts, domain_rows, errors, streak = summary()
@@ -80,7 +83,7 @@ def result(aid):
             st.error(f"Sua resposta: {option_text(q, q['selected'])}" if not q['was_correct'] else f"Sua resposta: {option_text(q, q['selected'])}")
             st.success(f"Resposta correta: {option_text(q, q['correct'])}")
             st.info(f"Por que esta é a resposta correta: {q['explanation']}")
-            st.markdown(f"Referência oficial: [{q['reference_title']}]({q['reference_url']})")
+            st.markdown(f"Fonte: [{q['reference_title']}]({q['reference_url']}) · Origem: {q['source_name']}")
     if st.button("Voltar ao dashboard"): del st.session_state.result; st.rerun()
 
 def history():
@@ -96,7 +99,7 @@ def history():
             st.error(f"Sua resposta: {option_text(r, r['selected'])}")
             st.success(f"Resposta correta: {option_text(r, r['correct'])}")
             st.info(f"Por que esta é a resposta correta: {r['explanation']}")
-            st.markdown(f"[Abrir referência oficial: {r['reference_title']}]({r['reference_url']})")
+            st.markdown(f"[Abrir fonte: {r['reference_title']}]({r['reference_url']}) · Origem: {r['source_name']}")
 
 with st.sidebar:
     st.header("Navegação")

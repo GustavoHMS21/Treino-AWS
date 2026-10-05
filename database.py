@@ -7,6 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent
 DB_PATH = ROOT / "data" / "simulator.db"
+CLOUDCERTPREP_DIR = ROOT / "question_bank" / "cloudcertprep" / "clf-c02"
+CLOUDCERTPREP_URL = "https://github.com/nastaso/cloudcertprep"
 DOMAINS = ["Conceitos de Nuvem", "Segurança e Conformidade", "Tecnologia e Serviços", "Cobrança, Preços e Suporte"]
 WEIGHTS = {DOMAINS[0]: .24, DOMAINS[1]: .30, DOMAINS[2]: .34, DOMAINS[3]: .12}
 
@@ -24,7 +26,8 @@ def init_db():
           id INTEGER PRIMARY KEY, domain TEXT NOT NULL, topic TEXT NOT NULL,
           prompt TEXT NOT NULL, choices TEXT NOT NULL, correct TEXT NOT NULL,
           explanation TEXT NOT NULL, reference_url TEXT NOT NULL, reference_title TEXT NOT NULL,
-          multi INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1
+          multi INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
+          source_name TEXT NOT NULL DEFAULT 'Autoral', source_key TEXT
         );
         CREATE TABLE IF NOT EXISTS attempts (
           id INTEGER PRIMARY KEY, kind TEXT NOT NULL, started_at TEXT NOT NULL, submitted_at TEXT,
@@ -38,8 +41,44 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_answers_question ON answers(question_id);
         CREATE INDEX IF NOT EXISTS idx_questions_domain ON questions(domain);
         """)
+        # Compatibilidade com bancos já criados antes de a origem ser registrada.
+        existing = {r[1] for r in c.execute("PRAGMA table_info(questions)")}
+        if "source_name" not in existing:
+            c.execute("ALTER TABLE questions ADD COLUMN source_name TEXT NOT NULL DEFAULT 'Autoral'")
+        if "source_key" not in existing:
+            c.execute("ALTER TABLE questions ADD COLUMN source_key TEXT")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_questions_source_key ON questions(source_key) WHERE source_key IS NOT NULL")
     from seed_questions import seed
     seed()
+    import_cloudcertprep()
+
+def import_cloudcertprep():
+    """Importa o banco CLF-C02 distribuído sob MIT e preserva sua procedência."""
+    files = [
+        ("domain1.json", DOMAINS[0]),
+        ("domain2.json", DOMAINS[1]),
+        ("domain3.json", DOMAINS[2]),
+        ("domain4.json", DOMAINS[3]),
+    ]
+    if not all((CLOUDCERTPREP_DIR / file).exists() for file, _ in files):
+        return
+    with connect() as c:
+        for filename, domain in files:
+            entries = json.loads((CLOUDCERTPREP_DIR / filename).read_text(encoding="utf-8"))
+            for entry in entries:
+                source_key = f"cloudcertprep:clf-c02:{entry['id']}"
+                if c.execute("SELECT 1 FROM questions WHERE source_key=?", (source_key,)).fetchone():
+                    continue
+                answer = entry["answer"] if isinstance(entry["answer"], list) else [entry["answer"]]
+                services = ", ".join(entry.get("services", []))
+                topic = services or f"Objetivo CLF-C02 {entry.get('taskStatement', 'geral')}"
+                c.execute("""INSERT INTO questions(
+                    domain,topic,prompt,choices,correct,explanation,reference_url,reference_title,multi,source_name,source_key
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (
+                    domain, topic, entry["question"], json.dumps(entry["options"]), json.dumps(answer),
+                    entry["explanation"], CLOUDCERTPREP_URL, "CloudCertPrep — fonte MIT",
+                    int(entry.get("isMultiAnswer", False)), "CloudCertPrep (MIT)", source_key,
+                ))
 
 def _rows_to_questions(rows):
     questions = []
@@ -108,7 +147,7 @@ def summary():
         attempts = c.execute("SELECT * FROM attempts WHERE submitted_at IS NOT NULL ORDER BY id DESC").fetchall()
         domain = c.execute("""SELECT q.domain, COUNT(*) total, SUM(a.was_correct) correct
           FROM answers a JOIN questions q ON q.id=a.question_id GROUP BY q.domain""").fetchall()
-        errors = c.execute("""SELECT q.id,q.prompt,q.domain,q.topic,q.choices,q.correct,q.explanation,q.reference_url,q.reference_title,
+        errors = c.execute("""SELECT q.id,q.prompt,q.domain,q.topic,q.choices,q.correct,q.explanation,q.reference_url,q.reference_title,q.source_name,
           a.selected,a.answered_at FROM answers a JOIN questions q ON q.id=a.question_id
           WHERE a.was_correct=0 ORDER BY a.id DESC LIMIT 50""").fetchall()
     streak=0
