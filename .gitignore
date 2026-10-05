@@ -1,0 +1,10 @@
+# Dados de estudo e artefatos locais
+data/*.db
+__pycache__/
+*.py[cod]
+.venv/
+.streamlit/
+
+# Arquivos do sistema/editor
+.DS_Store
+Thumbs.db
