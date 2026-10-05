@@ -32,7 +32,12 @@ def dashboard():
     if attempts:
         st.subheader("Evolução")
         chart=pd.DataFrame([{'Tentativa':f"#{a['id']}", 'Nota':a['score']} for a in reversed(attempts[:20])]).set_index('Tentativa')
-        st.line_chart(chart, y='Nota', y_min=0, y_max=100)
+        # `st.line_chart` não aceita y_min/y_max em todas as versões do Streamlit.
+        # As linhas auxiliares mantêm a escala percentual comparável em 0–100.
+        chart["Meta (80%)"] = 80
+        chart["Limite inferior"] = 0
+        chart["Limite superior"] = 100
+        st.line_chart(chart)
     st.subheader("Por domínio")
     stats={r['domain']: (100*r['correct']/r['total'] if r['total'] else 0, r['total']) for r in domain_rows}
     for domain in DOMAINS:
