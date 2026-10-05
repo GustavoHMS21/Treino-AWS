@@ -42,7 +42,17 @@ def init_db():
     seed()
 
 def _rows_to_questions(rows):
-    return [{**dict(r), "choices": json.loads(r["choices"]), "correct": json.loads(r["correct"])} for r in rows]
+    questions = []
+    for row in rows:
+        question = dict(row)
+        question["choices"] = json.loads(question["choices"])
+        question["correct"] = json.loads(question["correct"])
+        # `selected` só existe nas consultas de revisão. É armazenado como JSON
+        # para permitir respostas múltiplas, portanto precisa ser desserializado.
+        if "selected" in question:
+            question["selected"] = json.loads(question["selected"])
+        questions.append(question)
+    return questions
 
 def choose_questions(count):
     """Allocate by official weights, then favor weak / not-recent material."""
@@ -98,14 +108,14 @@ def summary():
         attempts = c.execute("SELECT * FROM attempts WHERE submitted_at IS NOT NULL ORDER BY id DESC").fetchall()
         domain = c.execute("""SELECT q.domain, COUNT(*) total, SUM(a.was_correct) correct
           FROM answers a JOIN questions q ON q.id=a.question_id GROUP BY q.domain""").fetchall()
-        errors = c.execute("""SELECT q.id,q.prompt,q.domain,q.topic,q.explanation,q.reference_url,q.reference_title,
+        errors = c.execute("""SELECT q.id,q.prompt,q.domain,q.topic,q.choices,q.correct,q.explanation,q.reference_url,q.reference_title,
           a.selected,a.answered_at FROM answers a JOIN questions q ON q.id=a.question_id
           WHERE a.was_correct=0 ORDER BY a.id DESC LIMIT 50""").fetchall()
     streak=0
     for a in attempts:
         if a["score"] >= 80: streak += 1
         else: break
-    return attempts, domain, errors, streak
+    return attempts, domain, _rows_to_questions(errors), streak
 
 def attempt_detail(attempt_id):
     with connect() as c:

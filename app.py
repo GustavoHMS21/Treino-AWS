@@ -10,6 +10,12 @@ def pct(v): return f"{v:.0f}%" if v is not None else "—"
 def duration_text(seconds):
     seconds=int(seconds or 0); return f"{seconds//60}min {seconds%60:02d}s"
 
+def option_text(question, keys):
+    """Apresenta letra e conteúdo, inclusive em questões de múltipla escolha."""
+    if not keys:
+        return "Não respondida"
+    return " · ".join(f"{key}. {question['choices'].get(key, 'Alternativa indisponível')}" for key in keys)
+
 def dashboard():
     attempts, domain_rows, errors, streak = summary()
     st.title("☁️ Simulador AWS Cloud Practitioner")
@@ -65,8 +71,11 @@ def result(aid):
     st.subheader("Correção e revisão")
     for i,q in enumerate(rows,1):
         with st.expander(f"{('✓' if q['was_correct'] else '✗')} Questão {i} · {q['domain']} · {q['topic']}"):
-            st.write(q['prompt']); st.write("Sua resposta:", ", ".join(q['selected']) or "Não respondida"); st.write("Correta:", ", ".join(q['correct']))
-            st.info(q['explanation']); st.markdown(f"Referência oficial: [{q['reference_title']}]({q['reference_url']})")
+            st.write(q['prompt'])
+            st.error(f"Sua resposta: {option_text(q, q['selected'])}" if not q['was_correct'] else f"Sua resposta: {option_text(q, q['selected'])}")
+            st.success(f"Resposta correta: {option_text(q, q['correct'])}")
+            st.info(f"Por que esta é a resposta correta: {q['explanation']}")
+            st.markdown(f"Referência oficial: [{q['reference_title']}]({q['reference_url']})")
     if st.button("Voltar ao dashboard"): del st.session_state.result; st.rerun()
 
 def history():
@@ -78,7 +87,11 @@ def history():
     if not errors: st.success("Nenhum erro registrado ainda.")
     for r in errors:
         with st.expander(f"{r['domain']} · {r['topic']} · {r['answered_at'][:10]}"):
-            st.write(r['prompt']); st.info(r['explanation']); st.markdown(f"[Abrir referência oficial: {r['reference_title']}]({r['reference_url']})")
+            st.write(r['prompt'])
+            st.error(f"Sua resposta: {option_text(r, r['selected'])}")
+            st.success(f"Resposta correta: {option_text(r, r['correct'])}")
+            st.info(f"Por que esta é a resposta correta: {r['explanation']}")
+            st.markdown(f"[Abrir referência oficial: {r['reference_title']}]({r['reference_url']})")
 
 with st.sidebar:
     st.header("Navegação")
