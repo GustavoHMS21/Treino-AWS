@@ -63,7 +63,7 @@ def dashboard():
     st.progress(min(overall/100,1.0), text=f"Meta visual: {pct(overall)} de 80%")
     st.subheader("Novo simulado")
     x,y=st.columns(2)
-    if x.button("Iniciar diário · 20 questões", use_container_width=True): start("Diário",20,0)
+    if x.button("Iniciar diário · 20 questões · 30 min", use_container_width=True): start("Diário",20,30*60)
     if y.button("Iniciar completo · 65 questões · 90 min", use_container_width=True): start("Completo",65,90*60)
     if attempts:
         st.subheader("Evolução")
