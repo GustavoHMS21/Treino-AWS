@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 DB_PATH = ROOT / "data" / "simulator.db"
 CLOUDCERTPREP_DIR = ROOT / "question_bank" / "cloudcertprep" / "clf-c02"
+CLOUDCERTPREP_PT_DIR = ROOT / "question_bank" / "cloudcertprep" / "clf-c02-pt"
 CLOUDCERTPREP_URL = "https://github.com/nastaso/cloudcertprep"
 DOMAINS = ["Conceitos de Nuvem", "Segurança e Conformidade", "Tecnologia e Serviços", "Cobrança, Preços e Suporte"]
 WEIGHTS = {DOMAINS[0]: .24, DOMAINS[1]: .30, DOMAINS[2]: .34, DOMAINS[3]: .12}
@@ -47,10 +48,15 @@ def init_db():
             c.execute("ALTER TABLE questions ADD COLUMN source_name TEXT NOT NULL DEFAULT 'Autoral'")
         if "source_key" not in existing:
             c.execute("ALTER TABLE questions ADD COLUMN source_key TEXT")
+        # Texto original em inglês das questões traduzidas (vazio nas autorais).
+        for column in ("prompt_en", "choices_en", "explanation_en"):
+            if column not in existing:
+                c.execute(f"ALTER TABLE questions ADD COLUMN {column} TEXT")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_questions_source_key ON questions(source_key) WHERE source_key IS NOT NULL")
     from seed_questions import seed
     seed()
     import_cloudcertprep()
+    apply_translations()
 
 def import_cloudcertprep():
     """Importa o banco CLF-C02 distribuído sob MIT e preserva sua procedência."""
@@ -80,12 +86,37 @@ def import_cloudcertprep():
                     int(entry.get("isMultiAnswer", False)), "CloudCertPrep (MIT)", source_key,
                 ))
 
+def apply_translations():
+    """Troca o texto das questões importadas pela tradução em português.
+
+    O original vai para as colunas *_en. Só atualiza questões ainda não
+    traduzidas, então roda rápido e funciona em bancos já existentes sem
+    perder o histórico de respostas (ligado ao id da questão)."""
+    if not CLOUDCERTPREP_PT_DIR.exists():
+        return
+    with connect() as c:
+        pending = {r["source_key"] for r in c.execute(
+            "SELECT source_key FROM questions WHERE source_key LIKE 'cloudcertprep:%' AND prompt_en IS NULL")}
+        if not pending:
+            return
+        for path in sorted(CLOUDCERTPREP_PT_DIR.glob("domain*.json")):
+            for entry in json.loads(path.read_text(encoding="utf-8")):
+                source_key = f"cloudcertprep:clf-c02:{entry['id']}"
+                if source_key not in pending:
+                    continue
+                c.execute("""UPDATE questions SET prompt_en=prompt, choices_en=choices, explanation_en=explanation,
+                    prompt=?, choices=?, explanation=? WHERE source_key=? AND prompt_en IS NULL""", (
+                    entry["question"], json.dumps(entry["options"], ensure_ascii=False), entry["explanation"], source_key,
+                ))
+
 def _rows_to_questions(rows):
     questions = []
     for row in rows:
         question = dict(row)
         question["choices"] = json.loads(question["choices"])
         question["correct"] = json.loads(question["correct"])
+        if question.get("choices_en"):
+            question["choices_en"] = json.loads(question["choices_en"])
         # `selected` só existe nas consultas de revisão. É armazenado como JSON
         # para permitir respostas múltiplas, portanto precisa ser desserializado.
         if "selected" in question:
@@ -148,7 +179,7 @@ def summary():
         domain = c.execute("""SELECT q.domain, COUNT(*) total, SUM(a.was_correct) correct
           FROM answers a JOIN questions q ON q.id=a.question_id GROUP BY q.domain""").fetchall()
         errors = c.execute("""SELECT q.id,q.prompt,q.domain,q.topic,q.choices,q.correct,q.explanation,q.reference_url,q.reference_title,q.source_name,
-          a.selected,a.answered_at FROM answers a JOIN questions q ON q.id=a.question_id
+          q.prompt_en,q.choices_en,q.explanation_en,a.selected,a.answered_at FROM answers a JOIN questions q ON q.id=a.question_id
           WHERE a.was_correct=0 ORDER BY a.id DESC LIMIT 50""").fetchall()
     streak=0
     for a in attempts:

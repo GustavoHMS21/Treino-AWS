@@ -32,7 +32,7 @@ O arquivo `data/simulator.db` é criado automaticamente e guarda questões, tent
 
 ## Banco de questões
 
-Além das questões autorais iniciais, o projeto inclui o banco público CLF-C02 do [CloudCertPrep](https://github.com/nastaso/cloudcertprep), distribuído sob a licença MIT. Os arquivos e uma cópia da licença estão em `question_bank/cloudcertprep/`; cada questão importada é identificada no banco e na revisão como **CloudCertPrep (MIT)**. Esse material é de prática: não é um dump, não é afiliado à AWS e não garante que uma questão apareça no exame.
+Além das questões autorais iniciais, o projeto inclui o banco público CLF-C02 do [CloudCertPrep](https://github.com/nastaso/cloudcertprep), distribuído sob a licença MIT. Os arquivos e uma cópia da licença estão em `question_bank/cloudcertprep/`; cada questão importada é identificada no banco e na revisão como **CloudCertPrep (MIT)**. As questões desse banco foram traduzidas para português do Brasil (`question_bank/cloudcertprep/clf-c02-pt/`), mantendo os nomes de serviços em inglês, como na prova em PT-BR. O app mostra a tradução por padrão; o botão **Ver original em inglês** em cada questão abre o texto original, e a opção **Questões em inglês** na barra lateral troca o simulado inteiro para o inglês. Esse material é de prática: não é um dump, não é afiliado à AWS e não garante que uma questão apareça no exame.
 
 ## Conteúdo e lógica
 
@@ -49,5 +49,6 @@ Além das questões autorais iniciais, o projeto inclui o banco público CLF-C02
 app.py              interface e fluxo
 database.py         SQLite, relatórios e seleção adaptativa
 seed_questions.py   banco inicial de questões autorais
+question_bank/      banco CloudCertPrep (original e tradução em clf-c02-pt/)
 data/simulator.db   criado em execução (não versionar)
 ```

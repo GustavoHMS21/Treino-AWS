@@ -19,6 +19,39 @@ def option_text(question, keys):
         choices = {}
     return " · ".join(f"{key}. {choices.get(key, 'Alternativa indisponível')}" for key in keys)
 
+def has_original(q): return bool(q.get("prompt_en"))
+
+def in_english(q, english):
+    """Versão da questão no idioma pedido. Questões autorais só existem em português."""
+    if not (english and has_original(q)):
+        return q
+    return {**q, "prompt": q["prompt_en"], "choices": q["choices_en"], "explanation": q["explanation_en"]}
+
+def view(q): return in_english(q, st.session_state.get("english", False))
+
+def other_language(q, key, with_explanation=False):
+    """Botão que abre a mesma questão no outro idioma, para tirar dúvida de tradução."""
+    if not has_original(q):
+        return
+    english = st.session_state.get("english", False)
+    alt = in_english(q, not english)
+    with st.popover("🇧🇷 Ver em português" if english else "🇺🇸 Ver original em inglês", key=key):
+        st.markdown(f"**{alt['prompt']}**")
+        for letter, text in alt["choices"].items():
+            st.markdown(f"{letter}. {text}")
+        if with_explanation:
+            st.caption(alt["explanation"])
+
+def review(q, key):
+    """Bloco de correção usado no resultado e no histórico."""
+    shown = view(q)
+    st.write(shown['prompt'])
+    st.error(f"Sua resposta: {option_text(shown, q['selected'])}")
+    st.success(f"Resposta correta: {option_text(shown, q['correct'])}")
+    st.info(f"Por que esta é a resposta correta: {shown['explanation']}")
+    other_language(q, key, with_explanation=True)
+    st.markdown(f"Fonte: [{q['reference_title']}]({q['reference_url']}) · Origem: {q['source_name']}")
+
 def dashboard():
     attempts, domain_rows, errors, streak = summary()
     st.title("☁️ Simulador AWS Cloud Practitioner")
@@ -59,9 +92,11 @@ def exam():
         if remaining==0: st.error("O tempo acabou. Envie o simulado para corrigir.")
     responses={}
     with st.form('exam_form'):
-        for n,q in enumerate(e['questions'],1):
+        for n,original in enumerate(e['questions'],1):
+            q=view(original)
             st.markdown(f"### {n}. {q['prompt']}")
-            opts=list(q['choices'].keys()); fmt=lambda k:f"{k}. {q['choices'][k]}"
+            other_language(original, f"alt_exam_{q['id']}")
+            opts=list(q['choices'].keys()); fmt=lambda k,q=q:f"{k}. {q['choices'][k]}"
             if q['multi']:
                 responses[q['id']]=st.multiselect("Selecione todas as respostas corretas",opts,format_func=fmt,key=f"q{q['id']}")
             else:
@@ -79,11 +114,7 @@ def result(aid):
     st.subheader("Correção e revisão")
     for i,q in enumerate(rows,1):
         with st.expander(f"{('✓' if q['was_correct'] else '✗')} Questão {i} · {q['domain']} · {q['topic']}"):
-            st.write(q['prompt'])
-            st.error(f"Sua resposta: {option_text(q, q['selected'])}" if not q['was_correct'] else f"Sua resposta: {option_text(q, q['selected'])}")
-            st.success(f"Resposta correta: {option_text(q, q['correct'])}")
-            st.info(f"Por que esta é a resposta correta: {q['explanation']}")
-            st.markdown(f"Fonte: [{q['reference_title']}]({q['reference_url']}) · Origem: {q['source_name']}")
+            review(q, f"alt_result_{i}")
     if st.button("Voltar ao dashboard"): del st.session_state.result; st.rerun()
 
 def history():
@@ -93,17 +124,14 @@ def history():
     st.dataframe(pd.DataFrame(data),use_container_width=True,hide_index=True)
     st.subheader("Últimos erros")
     if not errors: st.success("Nenhum erro registrado ainda.")
-    for r in errors:
+    for i,r in enumerate(errors):
         with st.expander(f"{r['domain']} · {r['topic']} · {r['answered_at'][:10]}"):
-            st.write(r['prompt'])
-            st.error(f"Sua resposta: {option_text(r, r['selected'])}")
-            st.success(f"Resposta correta: {option_text(r, r['correct'])}")
-            st.info(f"Por que esta é a resposta correta: {r['explanation']}")
-            st.markdown(f"[Abrir fonte: {r['reference_title']}]({r['reference_url']}) · Origem: {r['source_name']}")
+            review(r, f"alt_history_{i}")
 
 with st.sidebar:
     st.header("Navegação")
-    page=st.radio("",["Dashboard","Histórico e revisão"])
+    page=st.radio("Página",["Dashboard","Histórico e revisão"],label_visibility="collapsed")
+    st.toggle("Questões em inglês", key="english", help="A prova CLF-C02 pode ser feita em português. Use o inglês quando quiser treinar no idioma original.")
     st.caption("As questões iniciais são autorais; o banco pode crescer sem mudar a estrutura.")
 if 'exam' in st.session_state: exam()
 elif 'result' in st.session_state: result(st.session_state.result)
