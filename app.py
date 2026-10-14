@@ -8,7 +8,12 @@ from database import (DOMAINS, REINFORCEMENT, READY_EXAMS, init_db, choose_quest
 from study_content import GROUPS, STUDY_SOURCES, all_cards
 
 st.set_page_config(page_title="Simulador AWS CLF-C02", page_icon="☁️", layout="wide")
-init_db()
+
+@st.cache_resource
+def setup():
+    """Cria/migra o banco e importa as questões uma vez por execução do app, não a cada clique."""
+    init_db()
+setup()
 
 PAGES = ["Dashboard", "Flashcards", "Caderno de erros", "Guia de estudo", "Histórico e revisão"]
 SECONDS_PER_QUESTION = 90  # ritmo da prova real: 90 min para 65 questões, arredondado para cima
