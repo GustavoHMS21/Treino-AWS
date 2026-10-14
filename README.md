@@ -36,11 +36,21 @@ Além das questões autorais iniciais, o projeto inclui o banco público CLF-C02
 
 ## Conteúdo e lógica
 
-- Diário: 20 questões; completo: 65 questões e 90 minutos.
+- Diário: 20 questões e 30 minutos; completo: 65 questões e 90 minutos. O relógio atualiza sozinho a cada segundo.
+- Reforço: até 20 questões que você errou e ainda não acertou depois, com 90 segundos por questão. Não conta para a sequência nem para a prontidão.
+- Prontidão: os 3 últimos simulados completos com 80% ou mais indicam que dá para agendar a prova.
 - Pesos CLF-C02: Conceitos 24%, Segurança 30%, Tecnologia 34%, Cobrança/Preços/Suporte 12%.
 - Seleção adaptativa: adiciona prioridade a domínios e tópicos com menor acerto, reduzindo questões respondidas recentemente.
 - A correção só aparece após **Enviar simulado**.
 - Há perguntas de resposta única e múltipla. Nas múltiplas, todas as alternativas corretas precisam ser selecionadas.
+## Ferramentas de estudo
+
+- **Plano de hoje** (dashboard): flashcards e anotações que vencem hoje e erros pendentes para o reforço.
+- **Caderno de erros**: embaixo de cada correção errada há um formulário com três campos (o que a questão pedia, o que você marcou e por quê, qual pista apontava para a certa). As anotações voltam para revisão em 1, 3, 7, 14 e 30 dias; se você esquecer, voltam no dia seguinte.
+- **Flashcards**: cerca de 140 cards dos serviços e conceitos que mais se confundem na prova, com a mesma revisão espaçada.
+- **Guia de estudo**: tabelas de comparação por grupo (com modo teste que esconde os nomes), o método de estudo e links das fontes oficiais.
+- Flashcards e caderno podem ser exportados para o Anki (arquivo de texto separado por Tab).
+
 - Referências apontam para documentação e treinamento oficiais da AWS. Confirme o guia de exame mais atual no site oficial antes de marcar a prova.
 
 ## Estrutura
@@ -49,6 +59,8 @@ Além das questões autorais iniciais, o projeto inclui o banco público CLF-C02
 app.py              interface e fluxo
 database.py         SQLite, relatórios e seleção adaptativa
 seed_questions.py   banco inicial de questões autorais
+study_content.py    tabelas de comparação, flashcards e fontes oficiais
+tests/              testes (python -m unittest discover -s tests -t .)
 question_bank/      banco CloudCertPrep (original e tradução em clf-c02-pt/)
 data/simulator.db   criado em execução (não versionar)
 ```

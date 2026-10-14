@@ -2,7 +2,8 @@ import json
 import random
 import sqlite3
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -12,13 +13,25 @@ CLOUDCERTPREP_PT_DIR = ROOT / "question_bank" / "cloudcertprep" / "clf-c02-pt"
 CLOUDCERTPREP_URL = "https://github.com/nastaso/cloudcertprep"
 DOMAINS = ["Conceitos de Nuvem", "Segurança e Conformidade", "Tecnologia e Serviços", "Cobrança, Preços e Suporte"]
 WEIGHTS = {DOMAINS[0]: .24, DOMAINS[1]: .30, DOMAINS[2]: .34, DOMAINS[3]: .12}
+# Revisão espaçada (flashcards e caderno de erros): dias até a próxima revisão
+# para cada acerto seguido. Errar volta para a primeira caixa.
+REVIEW_INTERVALS = [1, 3, 7, 14, 30]
+# Simulados de reforço repetem erros e não entram na sequência nem na prontidão.
+REINFORCEMENT = "Reforço"
+READY_EXAMS = 3
 
+@contextmanager
 def connect():
+    """Conexão com commit ao final (ou rollback em erro) e sempre fechada."""
     DB_PATH.parent.mkdir(exist_ok=True)
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
-    return con
+    try:
+        with con:
+            yield con
+    finally:
+        con.close()
 
 def init_db():
     with connect() as c:
@@ -41,6 +54,13 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_answers_question ON answers(question_id);
         CREATE INDEX IF NOT EXISTS idx_questions_domain ON questions(domain);
+        CREATE TABLE IF NOT EXISTS flashcard_reviews (
+          card_id TEXT PRIMARY KEY, box INTEGER NOT NULL, due_at TEXT NOT NULL, reviewed_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS error_notes (
+          question_id INTEGER PRIMARY KEY REFERENCES questions(id), cue TEXT NOT NULL, mistake TEXT NOT NULL,
+          clue TEXT NOT NULL, box INTEGER NOT NULL DEFAULT 0, due_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
         """)
         # Compatibilidade com bancos já criados antes de a origem ser registrada.
         existing = {r[1] for r in c.execute("PRAGMA table_info(questions)")}
@@ -155,6 +175,21 @@ def choose_questions(count):
     random.shuffle(selected)
     return selected
 
+def reinforcement_ids():
+    """Questões cuja resposta mais recente foi errada: ainda não foram dominadas."""
+    with connect() as c:
+        return [r[0] for r in c.execute("""SELECT question_id FROM answers
+            WHERE id IN (SELECT MAX(id) FROM answers GROUP BY question_id) AND was_correct=0 ORDER BY id DESC""")]
+
+def choose_reinforcement(count):
+    ids = reinforcement_ids()[:count]
+    if not ids:
+        return []
+    with connect() as c:
+        qs = _rows_to_questions(c.execute("SELECT * FROM questions WHERE id IN (%s)" % ",".join("?"*len(ids)), ids).fetchall())
+    random.shuffle(qs)
+    return qs
+
 def create_attempt(kind, total):
     with connect() as c:
         cur = c.execute("INSERT INTO attempts(kind,started_at,total) VALUES(?,?,?)", (kind, now(), total))
@@ -173,6 +208,60 @@ def submit_attempt(attempt_id, responses, duration):
 
 def now(): return datetime.now(timezone.utc).isoformat()
 
+def _next_review(box, remembered):
+    """Nova caixa e data da próxima revisão (sistema de Leitner)."""
+    box = min(box + 1, len(REVIEW_INTERVALS) - 1) if remembered else 0
+    due = datetime.now(timezone.utc) + timedelta(days=REVIEW_INTERVALS[box])
+    return box, due.isoformat()
+
+def flashcard_progress():
+    with connect() as c:
+        return {r["card_id"]: dict(r) for r in c.execute("SELECT * FROM flashcard_reviews")}
+
+def review_flashcard(card_id, remembered):
+    with connect() as c:
+        row = c.execute("SELECT box FROM flashcard_reviews WHERE card_id=?", (card_id,)).fetchone()
+        # Primeiro "sabia" de um card novo começa na caixa 0 (revisa amanhã).
+        box, due = _next_review(row["box"] if row else -1, remembered)
+        c.execute("""INSERT INTO flashcard_reviews(card_id,box,due_at,reviewed_at) VALUES(?,?,?,?)
+            ON CONFLICT(card_id) DO UPDATE SET box=excluded.box, due_at=excluded.due_at, reviewed_at=excluded.reviewed_at""",
+            (card_id, box, due, now()))
+
+def get_note(question_id):
+    with connect() as c:
+        row = c.execute("SELECT * FROM error_notes WHERE question_id=?", (question_id,)).fetchone()
+    return dict(row) if row else None
+
+def save_note(question_id, cue, mistake, clue):
+    """Salvar (ou editar) uma anotação agenda a primeira revisão para amanhã."""
+    box, due = _next_review(-1, True)
+    with connect() as c:
+        c.execute("""INSERT INTO error_notes(question_id,cue,mistake,clue,box,due_at,updated_at) VALUES(?,?,?,?,?,?,?)
+            ON CONFLICT(question_id) DO UPDATE SET cue=excluded.cue, mistake=excluded.mistake, clue=excluded.clue, updated_at=excluded.updated_at""",
+            (question_id, cue.strip(), mistake.strip(), clue.strip(), box, due, now()))
+
+def delete_note(question_id):
+    with connect() as c:
+        c.execute("DELETE FROM error_notes WHERE question_id=?", (question_id,))
+
+def review_note(question_id, remembered):
+    with connect() as c:
+        row = c.execute("SELECT box FROM error_notes WHERE question_id=?", (question_id,)).fetchone()
+        if not row:
+            return
+        box, due = _next_review(row["box"], remembered)
+        c.execute("UPDATE error_notes SET box=?, due_at=? WHERE question_id=?", (box, due, question_id))
+
+def notes():
+    """Anotações com a questão correspondente, das que vencem primeiro."""
+    with connect() as c:
+        rows = c.execute("""SELECT n.*, q.prompt, q.prompt_en, q.choices, q.choices_en, q.correct, q.explanation, q.explanation_en,
+            q.domain, q.topic, q.reference_url, q.reference_title, q.source_name
+            FROM error_notes n JOIN questions q ON q.id=n.question_id ORDER BY n.due_at""").fetchall()
+    return _rows_to_questions(rows)
+
+def is_due(due_at): return due_at <= now()
+
 def summary():
     with connect() as c:
         attempts = c.execute("SELECT * FROM attempts WHERE submitted_at IS NOT NULL ORDER BY id DESC").fetchall()
@@ -183,9 +272,15 @@ def summary():
           WHERE a.was_correct=0 ORDER BY a.id DESC LIMIT 50""").fetchall()
     streak=0
     for a in attempts:
+        if a["kind"] == REINFORCEMENT: continue
         if a["score"] >= 80: streak += 1
         else: break
     return attempts, domain, _rows_to_questions(errors), streak
+
+def readiness(attempts):
+    """Quantos dos últimos simulados completos ficaram em 80% ou mais."""
+    full = [a for a in attempts if a["kind"] == "Completo"][:READY_EXAMS]
+    return sum(a["score"] >= 80 for a in full), len(full)
 
 def attempt_detail(attempt_id):
     with connect() as c:
